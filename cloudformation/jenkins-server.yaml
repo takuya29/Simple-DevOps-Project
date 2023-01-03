@@ -1,0 +1,92 @@
+# Reference: http://beta.awsdocs.com/infrastructure_as_code/cloudformation/applications/jenkins_cf_deployment/
+
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  InstanceType:
+    Description: "Instance type used for jenkins server"
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+  JenkinsPlugins:
+    Description: "Name of plugins installed on jenkins"
+    Type: CommaDelimitedList
+    Default: "github, gradle"
+
+Resources:
+  JenkinsInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-kernel-5.10-hvm-x86_64-gp2}}"
+      Tags:
+        - Key: "Name"
+          Value: "Jenkins_Server"
+      SecurityGroups:
+        - !Ref JenkinsSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -x
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource JenkinsInstance --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource JenkinsInstance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT30M
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - JenkinsInstall
+            - JenkinsPlugin
+        JenkinsInstall:
+          packages:
+            yum:
+              git: []
+          commands:
+            01_openjdk_install:
+              command: sudo amazon-linux-extras install -y java-openjdk11
+            02_jenkins_repo:
+              command: sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+            03_jenkins_key:
+              command: sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+            04_jenkins_install:
+              command: sudo yum install -y jenkins
+          services:
+            sysvinit:
+              jenkins:
+                enabled: true
+                ensureRunning: true
+        JenkinsPlugin:
+          files:
+            /local/jar/jenkins-cli.jar:
+              source: "http://localhost:8080/jnlpJars/jenkins-cli.jar"
+              mode: "000755"
+          commands:
+            01_install_plugins:
+              command: !Join
+                - " "
+                - - java -jar /local/jar/jenkins-cli.jar -s http://localhost:8080
+                  - -auth admin:$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
+                  - install-plugin
+                  - !Join
+                    - " "
+                    - !Ref JenkinsPlugins
+                  - -restart
+
+  JenkinsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Jenkins_Security_Group"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
