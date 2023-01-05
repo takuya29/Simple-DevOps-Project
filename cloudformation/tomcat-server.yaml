@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  InstanceType:
+    Description: "Instance type used for jenkins server"
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+
+Resources:
+  TomcatInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-kernel-5.10-hvm-x86_64-gp2}}"
+      Tags:
+        - Key: "Name"
+          Value: "Tomcat_Server"
+      SecurityGroups:
+        - !Ref DevOpsSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -x
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource TomcatInstance --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource TomcatInstance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT15M
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - config
+            - TomcatInstall
+        config:
+          commands:
+            01_install_required_packages:
+              command: sudo amazon-linux-extras install -y java-openjdk11 epel
+        TomcatInstall:
+          packages:
+            yum:
+              xmlstarlet: []
+          sources:
+            /opt/: "https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.70/bin/apache-tomcat-9.0.70.tar.gz"
+          files:
+            /usr/local/bin/tomcatup:
+              content: /opt/apache-tomcat-9.0.70/bin/startup.sh
+              mode: "120755"
+            /usr/local/bin/tomcatdown:
+              content: /opt/apache-tomcat-9.0.70/bin/shutdown.sh
+              mode: "120755"
+          commands:
+            01_edit_host_manager_context:
+              command:
+                sudo xmlstarlet ed --inplace --delete /Context/Valve /opt/apache-tomcat-9.0.70/webapps/host-manager/META-INF/context.xml
+            02_edit_manager_context:
+              command:
+                sudo xmlstarlet ed --inplace --delete /Context/Valve /opt/apache-tomcat-9.0.70/webapps/manager/META-INF/context.xml
+            03_add_role_manager-gui:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n roletmp
+                  - -i /n:tomcat-users/roletmp -t attr -n rolename -v manager-gui
+                  - -r /n:tomcat-users/roletmp -v role
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            04_add_role_manager-script:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n roletmp
+                  - -i /n:tomcat-users/roletmp -t attr -n rolename -v manager-script
+                  - -r /n:tomcat-users/roletmp -v role
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            05_add_role_manager-jmx:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n roletmp
+                  - -i /n:tomcat-users/roletmp -t attr -n rolename -v manager-jmx
+                  - -r /n:tomcat-users/roletmp -v role
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            06_add_role_manager-status:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n roletmp
+                  - -i /n:tomcat-users/roletmp -t attr -n rolename -v manager-status
+                  - -r /n:tomcat-users/roletmp -v role
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            07_add_user_admin:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n usertmp
+                  - -i /n:tomcat-users/usertmp -t attr -n username -v admin
+                  - -i /n:tomcat-users/usertmp -t attr -n password -v admin
+                  - -i /n:tomcat-users/usertmp -t attr -n roles -v "manager-gui, manager-script, manager-jmx, manager-status"
+                  - -r /n:tomcat-users/usertmp -v user
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            08_add_user_deployer:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n usertmp
+                  - -i /n:tomcat-users/usertmp -t attr -n username -v deployer
+                  - -i /n:tomcat-users/usertmp -t attr -n password -v deployer
+                  - -i /n:tomcat-users/usertmp -t attr -n roles -v manager-script
+                  - -r /n:tomcat-users/usertmp -v user
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            09_add_user_tomcat:
+              command: !Join
+                - " "
+                - - xmlstarlet ed --inplace -N n=http://tomcat.apache.org/xml 
+                  - -s /n:tomcat-users -t elem -n usertmp
+                  - -i /n:tomcat-users/usertmp -t attr -n username -v tomcat
+                  - -i /n:tomcat-users/usertmp -t attr -n password -v s3cret
+                  - -i /n:tomcat-users/usertmp -t attr -n roles -v manager-gui
+                  - -r /n:tomcat-users/usertmp -v user
+                  - /opt/apache-tomcat-9.0.70/conf/tomcat-users.xml
+            10_start_tomcat_server:
+              command: sudo /opt/apache-tomcat-9.0.70/bin/startup.sh
+
+  DevOpsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "DevOps_Security_Group"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
