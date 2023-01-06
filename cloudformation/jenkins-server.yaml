@@ -14,7 +14,7 @@ Parameters:
   JenkinsPlugins:
     Description: "Name of plugins installed on jenkins"
     Type: CommaDelimitedList
-    Default: "github, gradle"
+    Default: "github, gradle, deploy"
 
 Resources:
   JenkinsInstance:
