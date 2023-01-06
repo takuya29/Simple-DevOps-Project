@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
   InstanceType:
-    Description: "Instance type used for jenkins server"
+    Description: "Instance type used for tomcat server"
     Type: String
     Default: t2.micro
     AllowedValues:
