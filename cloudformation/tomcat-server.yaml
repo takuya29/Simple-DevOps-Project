@@ -20,7 +20,7 @@ Resources:
         - Key: "Name"
           Value: "Tomcat_Server"
       SecurityGroups:
-        - !Ref DevOpsSecurityGroup
+        - !Ref TomcatSecurityGroup
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -x
@@ -125,10 +125,10 @@ Resources:
             10_start_tomcat_server:
               command: sudo /opt/apache-tomcat-9.0.70/bin/startup.sh
 
-  DevOpsSecurityGroup:
+  TomcatSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "DevOps_Security_Group"
+      GroupDescription: "Tomcat_Security_Group"
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
